@@ -52,6 +52,7 @@ Plus:
    |----------------------------------------|------------------------------|
    | LilyGO T7-S3 + Waveshare 7.3" HAT (E)  | `lilygo-t7-s3` (default)     |
    | Seeed Studio reTerminal E1002          | `reterminal-e1002`           |
+   | ESP32-C5 + 1200x1600 Spectra E6 panel  | `esp32-c5-spectra-e6`        |
 
 4. Build and upload the firmware:
    ```bash
@@ -63,6 +64,22 @@ Plus:
    ```
 
 Omitting `-e` builds the default `lilygo-t7-s3` environment.
+
+### ESP32-C5 Spectra E6 Wiring
+
+The `esp32-c5-spectra-e6` environment targets an ESP32-C5-WROOM-1 board equivalent to
+`esp32-c5-devkitc1-n8r4` (8 MB Flash, 4 MB PSRAM) and the GDEB0709E01 panel. The 4 MB PSRAM configuration is
+required for the 1200x1600 image pipeline.
+
+| Display signal | ESP32-C5 GPIO |
+|----------------|---------------|
+| MOSI           | GPIO7         |
+| SCK            | GPIO6         |
+| CS_M           | GPIO5         |
+| CS_S           | GPIO4         |
+| DC             | GPIO8         |
+| RST            | GPIO9         |
+| BUSY           | GPIO10        |
 
 ### Adding a Board
 

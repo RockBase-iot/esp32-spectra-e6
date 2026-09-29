@@ -6,7 +6,10 @@
 #include "boards.h"
 
 // Display driver is selected by the board configuration (see include/boards.h)
-#ifdef EPD_BUSY_TIMEOUT_US
+#ifdef EPD_DUAL_CONTROLLER
+#include "Epd1200x1600E6.h"
+using Epd2Type = EPD_DRIVER;
+#elif defined(EPD_BUSY_TIMEOUT_US)
 // GxEPD2 hardcodes the busy timeout per driver; boards with slower refreshes override it here
 class Epd2Type : public EPD_DRIVER {
  public:
@@ -18,6 +21,10 @@ class Epd2Type : public EPD_DRIVER {
 using Epd2Type = EPD_DRIVER;
 #endif
 
+#ifdef EPD_PAGE_HEIGHT
+using DisplayType = GxEPD2_7C<Epd2Type, EPD_PAGE_HEIGHT>;
+#else
 using DisplayType = GxEPD2_7C<Epd2Type, Epd2Type::HEIGHT>;
+#endif
 
 #endif

@@ -46,6 +46,7 @@ class ConfigurationServer {
   AsyncWebServer *server;
   DNSServer *dnsServer;
   bool isServerRunning;
+  int lastStationCount;
 
   String htmlTemplate;
   OnSaveCallback onSaveCallback;

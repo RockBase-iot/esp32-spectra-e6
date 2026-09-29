@@ -3,18 +3,21 @@
 #include <SPIFFS.h>
 #include <WiFi.h>
 #include <WiFiAP.h>
+#include <esp_wifi.h>
+#include <soc/soc_caps.h>
 
-const char *ConfigurationServer::WIFI_AP_NAME = "Framey-Config";
-const char *ConfigurationServer::WIFI_AP_PASSWORD = "configure123";
+const char* ConfigurationServer::WIFI_AP_NAME = "Framey-Config";
+const char* ConfigurationServer::WIFI_AP_PASSWORD = "12345678";
 
-ConfigurationServer::ConfigurationServer(const Configuration &currentConfig)
+ConfigurationServer::ConfigurationServer(const Configuration& currentConfig)
     : deviceName("LilyGo-Weather-Station"),
       wifiAccessPointName(WIFI_AP_NAME),
       wifiAccessPointPassword(WIFI_AP_PASSWORD),
       currentConfiguration(currentConfig),
       server(nullptr),
       dnsServer(nullptr),
-      isServerRunning(false) {}
+      isServerRunning(false),
+      lastStationCount(-1) {}
 
 void ConfigurationServer::run(OnSaveCallback onSaveCallback) {
   this->onSaveCallback = onSaveCallback;
@@ -44,7 +47,29 @@ void ConfigurationServer::run(OnSaveCallback onSaveCallback) {
   Serial.println(wifiAccessPointName);
 
   WiFi.mode(WIFI_AP);
-  bool apStarted = WiFi.softAP(wifiAccessPointName.c_str(), wifiAccessPointPassword.c_str());
+
+#if SOC_WIFI_SUPPORT_5G
+  // ESP32-C5 is dual-band. With the default AUTO band mode the AP can end up on a
+  // 5 GHz channel that many phones never scan, making the hotspot "invisible".
+  // Lock the configuration hotspot to 2.4 GHz so every device can find it.
+  if (esp_wifi_set_band_mode(WIFI_BAND_MODE_2G_ONLY) == ESP_OK) {
+    Serial.println("WiFi band locked to 2.4 GHz (ESP32-C5 dual-band workaround)");
+  } else {
+    Serial.println("WARNING: failed to lock WiFi band to 2.4 GHz");
+  }
+#endif
+
+  // Explicit channel 1: the C5 may otherwise auto-pick a (possibly 5 GHz) channel
+  bool apStarted = WiFi.softAP(wifiAccessPointName.c_str(), wifiAccessPointPassword.c_str(), 1, 0, 4);
+
+  if (!apStarted) {
+    Serial.println("First softAP attempt failed, retrying in 2 seconds...");
+    delay(2000);
+    WiFi.mode(WIFI_OFF);
+    delay(500);
+    WiFi.mode(WIFI_AP);
+    apStarted = WiFi.softAP(wifiAccessPointName.c_str(), wifiAccessPointPassword.c_str(), 1, 0, 4);
+  }
 
   if (apStarted) {
     Serial.println("Access Point started successfully!");
@@ -54,6 +79,8 @@ void ConfigurationServer::run(OnSaveCallback onSaveCallback) {
     Serial.println(wifiAccessPointPassword);
     Serial.print("Access Point IP: ");
     Serial.println(WiFi.softAPIP());
+    Serial.print("Access Point MAC: ");
+    Serial.println(WiFi.softAPmacAddress());
     Serial.println("Setting up captive portal...");
 
     setupDNSServer();
@@ -88,6 +115,14 @@ void ConfigurationServer::handleRequests() {
   if (isServerRunning && dnsServer) {
     dnsServer->processNextRequest();
   }
+
+  if (isServerRunning) {
+    int stationCount = WiFi.softAPgetStationNum();
+    if (stationCount != lastStationCount) {
+      Serial.printf("Configuration AP: %d station(s) connected\n", stationCount);
+      lastStationCount = stationCount;
+    }
+  }
 }
 
 void ConfigurationServer::setupDNSServer() {
@@ -100,28 +135,28 @@ void ConfigurationServer::setupDNSServer() {
 void ConfigurationServer::setupWebServer() {
   server = new AsyncWebServer(80);
 
-  server->on("/generate_204", HTTP_GET, [this](AsyncWebServerRequest *request) { handleRoot(request); });  // Android
-  server->on("/fwlink", HTTP_GET, [this](AsyncWebServerRequest *request) { handleRoot(request); });        // Microsoft
-  server->on("/hotspot-detect.html", HTTP_GET, [this](AsyncWebServerRequest *request) { handleRoot(request); });  // iOS
+  server->on("/generate_204", HTTP_GET, [this](AsyncWebServerRequest* request) { handleRoot(request); });  // Android
+  server->on("/fwlink", HTTP_GET, [this](AsyncWebServerRequest* request) { handleRoot(request); });        // Microsoft
+  server->on("/hotspot-detect.html", HTTP_GET, [this](AsyncWebServerRequest* request) { handleRoot(request); });  // iOS
   server->on("/connectivity-check.html", HTTP_GET,
-             [this](AsyncWebServerRequest *request) { handleRoot(request); });  // Firefox
+             [this](AsyncWebServerRequest* request) { handleRoot(request); });  // Firefox
 
-  server->on("/", HTTP_GET, [this](AsyncWebServerRequest *request) { handleRoot(request); });
-  server->on("/config", HTTP_GET, [this](AsyncWebServerRequest *request) { handleRoot(request); });
-  server->on("/save", HTTP_POST, [this](AsyncWebServerRequest *request) { handleSave(request); });
+  server->on("/", HTTP_GET, [this](AsyncWebServerRequest* request) { handleRoot(request); });
+  server->on("/config", HTTP_GET, [this](AsyncWebServerRequest* request) { handleRoot(request); });
+  server->on("/save", HTTP_POST, [this](AsyncWebServerRequest* request) { handleSave(request); });
 
-  server->onNotFound([this](AsyncWebServerRequest *request) { handleNotFound(request); });
+  server->onNotFound([this](AsyncWebServerRequest* request) { handleNotFound(request); });
 
   server->begin();
   Serial.println("Web server started on port 80");
 }
 
-void ConfigurationServer::handleRoot(AsyncWebServerRequest *request) {
+void ConfigurationServer::handleRoot(AsyncWebServerRequest* request) {
   String html = getConfigurationPage();
   request->send(200, "text/html", html);
 }
 
-void ConfigurationServer::handleSave(AsyncWebServerRequest *request) {
+void ConfigurationServer::handleSave(AsyncWebServerRequest* request) {
   if (request->hasParam("ssid", true) && request->hasParam("password", true)) {
     Configuration config;
     config.ssid = request->getParam("ssid", true)->value();
@@ -142,7 +177,7 @@ void ConfigurationServer::handleSave(AsyncWebServerRequest *request) {
   stop();
 }
 
-void ConfigurationServer::handleNotFound(AsyncWebServerRequest *request) { request->redirect("/"); }
+void ConfigurationServer::handleNotFound(AsyncWebServerRequest* request) { request->redirect("/"); }
 
 bool ConfigurationServer::loadHtmlTemplate() {
   File file = SPIFFS.open("/config.html", "r");

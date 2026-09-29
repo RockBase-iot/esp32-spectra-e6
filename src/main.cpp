@@ -7,6 +7,7 @@
 
 #include "ApplicationConfig.h"
 #include "ApplicationConfigStorage.h"
+#include "ColorTestScreen.h"
 #include "ConfigurationScreen.h"
 #include "ConfigurationServer.h"
 #include "DisplayType.h"
@@ -20,7 +21,11 @@ std::unique_ptr<ApplicationConfig> appConfig;
 ApplicationConfigStorage configStorage;
 
 // Standard constructor for GxEPD2
+#ifdef EPD_DUAL_CONTROLLER
+DisplayType display(Epd2Type(EPD_CS, EPD_CS_S, EPD_DC, EPD_RSET, EPD_BUSY));
+#else
 DisplayType display(Epd2Type(EPD_CS, EPD_DC, EPD_RSET, EPD_BUSY));
+#endif
 
 #ifdef EPD_SPI_HOST
 SPIClass epdSpi(EPD_SPI_HOST);
@@ -156,6 +161,13 @@ void setup() {
 
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LED_ON);
+
+  // Panel self-test on every boot except the periodic timer wakeup:
+  // first power-on / flash / button press shows the six native colors.
+  if (esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_TIMER) {
+    ColorTestScreen colorTestScreen(display);
+    colorTestScreen.render();
+  }
 
   // Try to connect to WiFi if we have valid credentials
   WiFiConnection wifi(appConfig->wifiSSID, appConfig->wifiPassword);

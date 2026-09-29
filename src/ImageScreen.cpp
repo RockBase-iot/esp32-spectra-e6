@@ -265,11 +265,13 @@ void ImageScreen::render() {
     displayError("Failed to process image data");
     return;
   }
+  downloadResult.reset();
 
-  renderBitmaps(*bitmaps);
-  displayBatteryStatus();
-
-  display.display();
+  display.firstPage();
+  do {
+    renderBitmaps(*bitmaps);
+    displayBatteryStatus();
+  } while (display.nextPage());
   display.hibernate();
 }
 
